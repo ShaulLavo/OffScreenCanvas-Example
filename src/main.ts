@@ -1,69 +1,93 @@
 import './style.css'
 
-const canvas = document.getElementById('canvas') as HTMLCanvasElement
-canvas.width = window.innerWidth
-canvas.height = window.innerHeight
-const ctx = canvas.getContext('2d')!
+if (!crossOriginIsolated) throw new Error('Not cross origin isolated')
+const IMAGE_NAMES = ['sky', 'mountains', 'trees', 'ground', 'grass']
+const app = document.getElementById('app') as HTMLDivElement
+console.log(crossOriginIsolated)
+const buffer = new SharedArrayBuffer(8)
 
-async function createWorkerTask(
-	imageBitmap: ImageBitmap
-): Promise<ImageBitmap> {
-	return new Promise(async (resolve, reject) => {
-		try {
-			const offscreen = new OffscreenCanvas(
-				window.innerWidth,
-				window.innerHeight
-			)
-			const worker = new Worker('/worker.ts')
+const sharedData = new Int32Array(buffer)
+sharedData[0] = 0
+sharedData[1] = window.innerWidth
 
-			worker.onmessage = event => {
-				resolve(event.data.bitmap)
-			}
-
-			worker.onerror = error => {
-				reject(error)
-			}
-
-			worker.postMessage(
-				{
-					offscreen,
-					imageBitmap,
-					width: window.innerWidth,
-					height: window.innerHeight,
-				},
-				[offscreen]
-			)
-		} catch (error) {
-			reject(error)
-		}
-	})
+let workers: Worker[] = []
+const updatePosition = (current: number, other: number, width: number) => {
+	const newX = current - 10
+	if (newX + width < 0) {
+		return other + width
+	}
+	return newX
 }
 
-async function drawLayers(imageElements: HTMLImageElement[]) {
-	const tasks: Promise<ImageBitmap>[] = []
+function createWorker(): Worker {
+	const worker = new Worker(new URL('./worker.ts', import.meta.url))
 
-	for (const imageElement of imageElements.values()) {
-		const imageBitmap = await createImageBitmap(imageElement)
-		const task = createWorkerTask(imageBitmap)
-		tasks.push(task)
+	worker.onmessage = event => {
+		console.log(event.data)
 	}
 
-	try {
-		const bitmaps = await Promise.all(tasks)
+	return worker
+}
 
-		bitmaps.forEach(bitmap => {
-			ctx.drawImage(bitmap, 0, 0)
-		})
-	} catch (error) {
-		console.error('An error occurred:', error)
-	}
+function createCanvas() {
+	const canvas = document.createElement('canvas')
+	canvas.width = window.innerWidth
+	canvas.height = window.innerHeight
+	canvas.style.position = 'absolute'
+
+	app.appendChild(canvas)
+
+	return canvas.transferControlToOffscreen()
+}
+
+async function firstPaint(imageElements: HTMLImageElement[]) {
+	const backgroundImages = [...imageElements, ,]
+		.filter(Boolean)
+		.map(async image => await createImageBitmap(image!))
+	const foregroundImages = [, , , ...imageElements]
+		.filter(Boolean)
+		.map(async image => await createImageBitmap(image!))
+	workers.push(createWorker())
+	workers.push(createWorker())
+	backgroundImages.forEach((imageBitmap, i) => {
+		const offscreen = createCanvas()
+
+		workers[0].postMessage(
+			{
+				offscreen,
+				imageBitmap,
+				width: window.innerWidth,
+				height: window.innerHeight,
+				buffer,
+				type: 'init',
+				id: IMAGE_NAMES[i],
+			},
+			[offscreen]
+		)
+	})
+	foregroundImages.forEach((imageBitmap, i) => {
+		const offscreen = createCanvas()
+
+		workers[1].postMessage(
+			{
+				offscreen,
+				imageBitmap,
+				width: window.innerWidth,
+				height: window.innerHeight,
+				buffer,
+				type: 'init',
+				id: [, , , ...IMAGE_NAMES].filter(Boolean)[i],
+			},
+			[offscreen]
+		)
+	})
 }
 const getImageUrl = (name: string) =>
 	`https://res.cloudinary.com/dp7akzaod/image/upload/v1698698710/${name}.png`
 
-const imagePaths = ['sky', 'mountains', 'trees', 'ground', 'grass'].map(
-	getImageUrl
-)
+const imagePaths = IMAGE_NAMES.map(name => {
+	return getImageUrl(name)
+})
 
 const preloadImages = async (imagePaths: string[]) => {
 	const promises = imagePaths.map(imagePath => {
@@ -79,8 +103,24 @@ const preloadImages = async (imagePaths: string[]) => {
 
 	return await Promise.all(promises)
 }
+function animate() {
+	requestAnimationFrame(() => {
+		sharedData[0] = updatePosition(
+			sharedData[0],
+			sharedData[1],
+			window.innerWidth
+		)
+		sharedData[1] = updatePosition(
+			sharedData[1],
+			sharedData[0],
+			window.innerWidth
+		)
+		animate()
+	})
+}
 
 ;(async () => {
 	const images = await preloadImages(imagePaths)
-	await drawLayers(images)
+	await firstPaint(images)
+	animate()
 })()
