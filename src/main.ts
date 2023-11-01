@@ -1,23 +1,7 @@
 import './style.css'
 
-if (!crossOriginIsolated) throw new Error('Not cross origin isolated')
-
 const IMAGE_NAMES = ['sky', 'mountains', 'trees', 'ground', 'grass']
 const app = document.getElementById('app') as HTMLDivElement
-
-const buffer = new SharedArrayBuffer(8)
-
-const sharedData = new Int32Array(buffer)
-sharedData[0] = 0
-sharedData[1] = window.innerWidth
-
-// const updatePosition = (current: number, other: number, width: number) => {
-// 	const newX = current - 10
-// 	if (newX + width < 0) {
-// 		return other + width
-// 	}
-// 	return newX
-// }
 
 async function createWorkerTask(
 	ids: string[],
@@ -25,24 +9,23 @@ async function createWorkerTask(
 ): Promise<void> {
 	try {
 		const worker = new Worker(new URL('./worker.ts', import.meta.url))
-		const canvases: OffscreenCanvas[] = []
 
 		ids.forEach((id, index) => {
-			canvases.push(createCanvas())
+			const canvas = createCanvas()
 			worker.postMessage(
 				{
-					id: id,
-					offscreen: canvases[index],
-					imageBitmap: imageBitmaps,
-					width: window.innerWidth,
-					height: window.innerHeight,
-					buffer: sharedData,
+					canvasId: id,
+					offscreen: canvas,
+					imageBitmap: imageBitmaps[index],
+					canvasWidth: window.innerWidth,
+					canvasHeight: window.innerHeight,
 					type: 'init',
 				},
-				[canvases[index]]
+				[canvas]
 			)
 		})
 
+		worker.postMessage({ type: 'start' })
 		worker.onmessage = function (event: MessageEvent) {
 			console.log(event.data)
 		}
@@ -83,21 +66,6 @@ const preloadImages = async (imagePaths: string[]) => {
 
 	return await Promise.all(promises)
 }
-// function animate() {
-// 	requestAnimationFrame(() => {
-// 		sharedData[0] = updatePosition(
-// 			sharedData[0],
-// 			sharedData[1],
-// 			window.innerWidth
-// 		)
-// 		sharedData[1] = updatePosition(
-// 			sharedData[1],
-// 			sharedData[0],
-// 			window.innerWidth
-// 		)
-// 		animate()
-// 	})
-// }
 
 ;(async () => {
 	const images = await preloadImages(imagePaths)
@@ -108,5 +76,4 @@ const preloadImages = async (imagePaths: string[]) => {
 	const lastTwoImages = imageBitmaps.slice(3)
 	await createWorkerTask(IMAGE_NAMES.slice(0, 3), firstThreeImages)
 	await createWorkerTask(IMAGE_NAMES.slice(3), lastTwoImages)
-	// animate()
 })()

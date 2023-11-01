@@ -1,67 +1,92 @@
-interface WorkerMessageData {
-	id: string
-	offscreen: OffscreenCanvas
-	imageBitmap: ImageBitmap
-	width: number
-	height: number
-	buffer: SharedArrayBuffer | ArrayBuffer
-	type: 'init' | 'update'
-}
+export type WorkerMessageData =
+	| {
+			type: 'start'
+	  }
+	| {
+			canvasId: string
+			offscreen: OffscreenCanvas
+			imageBitmap: ImageBitmap
+			canvasWidth: number
+			canvasHeight: number
+			buffer: SharedArrayBuffer | ArrayBuffer
+			type: 'init'
+	  }
 
 type CanvasContext = {
 	offscreen: OffscreenCanvas
 	imageBitmap: ImageBitmap
+	context: OffscreenCanvasRenderingContext2D
 }
 
+const updatePosition = (
+	current: number,
+	other: number,
+	width: number,
+	delta: number
+) => {
+	const newX = current - 100 * (delta / 1000)
+	if (newX + width < 0) {
+		return other + width
+	}
+	return newX
+}
+
+const frameDuration: number = 1000 / 60 // 60 FPS
 const canvasMap: Record<string, CanvasContext> = {}
 let height: number
 let width: number
-let sharedData: Int32Array
 
 self.onmessage = function (event: MessageEvent<WorkerMessageData>) {
 	try {
-		const { id, buffer, type } = event.data
+		const { type } = event.data
 
 		if (type === 'init') {
-			canvasMap[id] = {
-				offscreen: event.data.offscreen,
-				imageBitmap: event.data.imageBitmap,
+			const { canvasId, offscreen, imageBitmap, canvasHeight, canvasWidth } =
+				event.data
+			const ctx = offscreen.getContext('2d')!
+			canvasMap[canvasId] = {
+				offscreen: offscreen,
+				imageBitmap: imageBitmap,
+				context: ctx,
 			}
-			height = event.data.height
-			sharedData = new Int32Array(buffer)
-			width = event.data.width
-		}
-		self.postMessage({ imageBitmap: canvasMap[id].imageBitmap })
+			height = canvasHeight
+			width = canvasWidth
 
-		if (!canvasMap[id]) {
-			throw new Error(`Canvas with id ${id} is not initialized.`)
+			ctx.drawImage(imageBitmap, 0, 0, width, height)
+			ctx.drawImage(imageBitmap, width, 0, width, height)
 		}
 
-		const ctx = canvasMap[id].offscreen.getContext('2d')!
-		if (!ctx) throw new Error('Could not get 2D context')
-		function animate() {
-			requestAnimationFrame(() => {
+		let imageX = 0
+		let imageCopyX = width
+		let prevTime = 0
+
+		function animate(currentTime: number) {
+			let delta = currentTime - prevTime
+
+			if (delta > frameDuration) {
+				imageX = updatePosition(imageX, imageCopyX, width, delta)
+				imageCopyX = updatePosition(imageCopyX, imageX, width, delta)
+
 				Object.keys(canvasMap).forEach(id => {
-					const canvasContext = canvasMap[id]
-					const ctx = canvasContext.offscreen.getContext('2d')!
-					if (!ctx) throw new Error('Could not get 2D context')
-
+					const ctx = canvasMap[id].context
 					ctx.clearRect(0, 0, width, height)
-					ctx.drawImage(canvasContext.imageBitmap, 0, 0, width, height)
-					// ctx.drawImage(
-					// 	canvasContext.imageBitmap,
-					// 	canvasContext.sharedData[1],
-					// 	0,
-					// 	canvasContext.width,
-					// 	canvasContext.height
-					// )
+					ctx.drawImage(canvasMap[id].imageBitmap, imageX, 0, width + 2, height)
+					ctx.drawImage(
+						canvasMap[id].imageBitmap,
+						imageCopyX,
+						0,
+						width + 2,
+						height
+					)
 				})
-				animate()
-			})
+
+				prevTime = currentTime - (delta % frameDuration)
+			}
+			requestAnimationFrame(animate)
 		}
 
-		animate()
+		if (type === 'start') requestAnimationFrame(animate)
 	} catch (err) {
-		console.error('Error inside worker:', err)
+		err instanceof Error && self.postMessage({ message: err.message })
 	}
 }
