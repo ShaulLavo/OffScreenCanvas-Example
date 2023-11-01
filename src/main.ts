@@ -1,25 +1,7 @@
 import './style.css'
 
-if (!crossOriginIsolated) throw new Error('Not cross origin isolated')
-
 const IMAGE_NAMES = ['sky', 'mountains', 'trees', 'ground', 'grass']
 const app = document.getElementById('app') as HTMLDivElement
-
-const buffer = new SharedArrayBuffer(8)
-
-const sharedData = new Int32Array(buffer)
-sharedData[0] = 0
-sharedData[1] = window.innerWidth
-
-const updatePosition = (current: number, other: number, width: number) => {
-	console.log(current, other, width)
-	const newX = current - 1
-	if (newX + width < 0) {
-		console.log('ha?')
-		return other + width
-	}
-	return newX
-}
 
 function createWorkerTask(ids: string[], imageBitmaps: ImageBitmap[]): void {
 	try {
@@ -34,7 +16,6 @@ function createWorkerTask(ids: string[], imageBitmaps: ImageBitmap[]): void {
 					imageBitmap: imageBitmaps[index],
 					width: window.innerWidth,
 					height: window.innerHeight,
-					buffer,
 					type: 'init',
 				},
 				[canvas]
@@ -81,21 +62,6 @@ const preloadImages = async (imagePaths: string[]) => {
 
 	return await Promise.all(promises)
 }
-function animate() {
-	requestAnimationFrame(() => {
-		sharedData[0] = updatePosition(
-			sharedData[0],
-			sharedData[1],
-			window.innerWidth
-		)
-		sharedData[1] = updatePosition(
-			sharedData[1],
-			sharedData[0],
-			window.innerWidth
-		)
-		animate()
-	})
-}
 
 ;(async () => {
 	const images = await preloadImages(imagePaths)
@@ -106,5 +72,4 @@ function animate() {
 	const lastTwoImages = imageBitmaps.slice(3)
 	createWorkerTask(IMAGE_NAMES.slice(0, 3), firstThreeImages)
 	createWorkerTask(IMAGE_NAMES.slice(3), lastTwoImages)
-	animate()
 })()
