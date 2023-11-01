@@ -1,10 +1,8 @@
 import './style.css'
-import { WorkerMessageData } from './worker'
 
 const IMAGE_NAMES = ['sky', 'mountains', 'trees', 'ground', 'grass']
 const app = document.getElementById('app') as HTMLDivElement
-const shouldUseWorkers = false
-const shouldUseOffscreenCanvas = false
+
 //main thread rendering
 const canvases: {
 	canvas: OffscreenCanvas | HTMLCanvasElement
@@ -15,15 +13,15 @@ let imageCopyX = window.innerWidth
 let prevTime = 0
 const frameDuration: number = 1000 / 60 // 60 FPS
 
-function createCanvas() {
+function createCanvas(shouldUseOffscreenCanvas = false, isBottom = false) {
 	const canvas = document.createElement('canvas')
 	canvas.width = window.innerWidth
-	canvas.height = window.innerHeight
+	canvas.height = window.innerHeight / 2
 	canvas.style.position = 'absolute'
-
+	if (isBottom) canvas.style.bottom = '0px'
 	app.appendChild(canvas)
-	if (!shouldUseOffscreenCanvas && !shouldUseWorkers) return canvas
-	return canvas.transferControlToOffscreen()
+	if (shouldUseOffscreenCanvas) return canvas.transferControlToOffscreen()
+	return canvas
 }
 
 const updatePosition = (
@@ -53,7 +51,7 @@ async function preloadImages(imagePaths: string[]) {
 			image.crossOrigin = 'anonymous'
 			image.src = imagePath
 			image.width = window.innerWidth
-			image.height = window.innerHeight
+			image.height = window.innerHeight / 2
 			image.onload = () => resolve(image)
 		})
 	})
@@ -61,39 +59,20 @@ async function preloadImages(imagePaths: string[]) {
 	return await Promise.all(promises)
 }
 
-;(async () => {
-	const images = await preloadImages(imagePaths)
-	const imageBitmaps = await Promise.all(
-		images.map(image => createImageBitmap(image))
-	)
-	if (shouldUseWorkers) {
-		const chunkSize = 3
-		const totalImages = imageBitmaps.length
-		// Split the the rendering tasks into chunks of 3
-		// each worker get 3 canvas elements to render
-		for (let i = 0; i < totalImages; i += chunkSize) {
-			const imagesChunk = imageBitmaps.slice(i, i + chunkSize)
-			const namesChunk = IMAGE_NAMES.slice(i, i + chunkSize)
-			createWorkerTask(namesChunk, imagesChunk)
-		}
-	} else {
-		drawOffScreenWithoutWorker(imageBitmaps)
-		requestAnimationFrame(animate)
-	}
-})()
-
-function drawOffScreenWithoutWorker(imageBitmaps: ImageBitmap[]) {
+function drawOffScreenWithoutWorker(
+	imageBitmaps: ImageBitmap[],
+	isOffscreen = false
+) {
 	imageBitmaps.forEach(img => {
-		const canvas = createCanvas()
+		const canvas = isOffscreen ? createCanvas(true, true) : createCanvas()
 		const ctx = canvas.getContext('2d')!
-		// ctx.clip = function () {}
-		ctx.drawImage(img, 0, 0, window.innerWidth, window.innerHeight)
+		ctx.drawImage(img, 0, 0, window.innerWidth, window.innerHeight / 2)
 		ctx.drawImage(
 			img,
 			window.innerWidth,
 			0,
 			window.innerWidth,
-			window.innerHeight
+			window.innerHeight / 2
 		)
 		canvases.push({ canvas, img })
 	})
@@ -108,14 +87,28 @@ function animate(currentTime: number) {
 
 		canvases.forEach(({ canvas, img }) => {
 			const ctx = canvas.getContext('2d')!
-			ctx.clearRect?.(0, 0, window.innerWidth, window.innerHeight)
-			ctx.drawImage(img, imageX, 0, window.innerWidth + 2, window.innerHeight)
+			ctx.clearRect?.(0, 0, window.innerWidth, window.innerHeight / 2)
+			ctx.drawImage(
+				img,
+				imageX,
+				0,
+				window.innerWidth + 5,
+				window.innerHeight / 2
+			)
 			ctx.drawImage(
 				img,
 				imageCopyX,
 				0,
-				window.innerWidth + 2,
-				window.innerHeight
+				window.innerWidth + 5,
+				window.innerHeight / 2
+			)
+			ctx.font = '48px serif'
+			ctx.fillText(
+				ctx instanceof OffscreenCanvasRenderingContext2D
+					? 'Off Screen'
+					: 'On Screen',
+				innerWidth / 2 - 60,
+				window.innerHeight / 4
 			)
 		})
 
@@ -123,29 +116,13 @@ function animate(currentTime: number) {
 	}
 	requestAnimationFrame(animate)
 }
-function createWorkerTask(ids: string[], imageBitmaps: ImageBitmap[]): void {
-	try {
-		const worker = new Worker(new URL('./worker.ts', import.meta.url))
 
-		ids.forEach((id, index) => {
-			const canvas = createCanvas() as OffscreenCanvas
-			worker.postMessage(
-				{
-					canvasId: id,
-					offscreen: canvas,
-					imageBitmap: imageBitmaps[index],
-					canvasWidth: window.innerWidth,
-					canvasHeight: window.innerHeight,
-					type: 'init',
-				} as WorkerMessageData,
-				[canvas]
-			)
-		})
-		worker.postMessage({ type: 'start' } as WorkerMessageData)
-		worker.onmessage = function (event: MessageEvent) {
-			console.log(event.data)
-		}
-	} catch (error) {
-		console.error(error)
-	}
-}
+;(async () => {
+	const images = await preloadImages(imagePaths)
+	const imageBitmaps = await Promise.all(
+		images.map(image => createImageBitmap(image))
+	)
+	drawOffScreenWithoutWorker(imageBitmaps)
+	drawOffScreenWithoutWorker(imageBitmaps, true)
+	requestAnimationFrame(animate)
+})()
