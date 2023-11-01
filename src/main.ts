@@ -1,16 +1,16 @@
 import './style.css'
 
 if (!crossOriginIsolated) throw new Error('Not cross origin isolated')
+
 const IMAGE_NAMES = ['sky', 'mountains', 'trees', 'ground', 'grass']
 const app = document.getElementById('app') as HTMLDivElement
-console.log(crossOriginIsolated)
+
 const buffer = new SharedArrayBuffer(8)
 
 const sharedData = new Int32Array(buffer)
 sharedData[0] = 0
 sharedData[1] = window.innerWidth
 
-let workers: Worker[] = []
 const updatePosition = (current: number, other: number, width: number) => {
 	const newX = current - 10
 	if (newX + width < 0) {
@@ -19,14 +19,36 @@ const updatePosition = (current: number, other: number, width: number) => {
 	return newX
 }
 
-function createWorker(): Worker {
-	const worker = new Worker(new URL('./worker.ts', import.meta.url))
+async function createWorkerTask(
+	ids: string[],
+	imageBitmaps: ImageBitmap[]
+): Promise<void> {
+	try {
+		const worker = new Worker(new URL('./worker.ts', import.meta.url))
+		const canvases: OffscreenCanvas[] = []
 
-	worker.onmessage = event => {
-		console.log(event.data)
+		ids.forEach((id, index) => {
+			canvases.push(createCanvas())
+			worker.postMessage(
+				{
+					id: id,
+					offscreen: canvases[index],
+					imageBitmap: imageBitmaps,
+					width: window.innerWidth,
+					height: window.innerHeight,
+					buffer: sharedData,
+					type: 'init',
+				},
+				[canvases[index]]
+			)
+		})
+
+		worker.onmessage = function (event: MessageEvent) {
+			console.log(event.data)
+		}
+	} catch (error) {
+		console.error(error)
 	}
-
-	return worker
 }
 
 function createCanvas() {
@@ -40,48 +62,6 @@ function createCanvas() {
 	return canvas.transferControlToOffscreen()
 }
 
-async function firstPaint(imageElements: HTMLImageElement[]) {
-	const backgroundImages = [...imageElements, ,]
-		.filter(Boolean)
-		.map(async image => await createImageBitmap(image!))
-	const foregroundImages = [, , , ...imageElements]
-		.filter(Boolean)
-		.map(async image => await createImageBitmap(image!))
-	workers.push(createWorker())
-	workers.push(createWorker())
-	backgroundImages.forEach((imageBitmap, i) => {
-		const offscreen = createCanvas()
-
-		workers[0].postMessage(
-			{
-				offscreen,
-				imageBitmap,
-				width: window.innerWidth,
-				height: window.innerHeight,
-				buffer,
-				type: 'init',
-				id: IMAGE_NAMES[i],
-			},
-			[offscreen]
-		)
-	})
-	foregroundImages.forEach((imageBitmap, i) => {
-		const offscreen = createCanvas()
-
-		workers[1].postMessage(
-			{
-				offscreen,
-				imageBitmap,
-				width: window.innerWidth,
-				height: window.innerHeight,
-				buffer,
-				type: 'init',
-				id: [, , , ...IMAGE_NAMES].filter(Boolean)[i],
-			},
-			[offscreen]
-		)
-	})
-}
 const getImageUrl = (name: string) =>
 	`https://res.cloudinary.com/dp7akzaod/image/upload/v1698698710/${name}.png`
 
@@ -121,6 +101,12 @@ function animate() {
 
 ;(async () => {
 	const images = await preloadImages(imagePaths)
-	await firstPaint(images)
-	animate()
+	const imageBitmaps = await Promise.all(
+		images.map(image => createImageBitmap(image))
+	)
+	const firstThreeImages = imageBitmaps.slice(0, 3)
+	const lastTwoImages = imageBitmaps.slice(3)
+	await createWorkerTask(IMAGE_NAMES.slice(0, 3), firstThreeImages)
+	await createWorkerTask(IMAGE_NAMES.slice(3), lastTwoImages)
+	// animate()
 })()
