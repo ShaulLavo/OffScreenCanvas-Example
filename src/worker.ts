@@ -1,12 +1,16 @@
-interface WorkerMessageData {
-	canvasId: string
-	offscreen: OffscreenCanvas
-	imageBitmap: ImageBitmap
-	width: number
-	height: number
-	buffer: SharedArrayBuffer | ArrayBuffer
-	type: 'init' | 'update'
-}
+export type WorkerMessageData =
+	| {
+			type: 'start'
+	  }
+	| {
+			canvasId: string
+			offscreen: OffscreenCanvas
+			imageBitmap: ImageBitmap
+			canvasWidth: number
+			canvasHeight: number
+			buffer: SharedArrayBuffer | ArrayBuffer
+			type: 'init'
+	  }
 
 type CanvasContext = {
 	offscreen: OffscreenCanvas
@@ -28,20 +32,24 @@ const updatePosition = (current: number, other: number, width: number) => {
 
 self.onmessage = function (event: MessageEvent<WorkerMessageData>) {
 	try {
-		const { canvasId, type } = event.data
+		const { type } = event.data
 
 		if (type === 'init') {
+			const { canvasId, offscreen, imageBitmap, canvasHeight, canvasWidth } =
+				event.data
+			const ctx = offscreen.getContext('2d')!
 			canvasMap[canvasId] = {
-				offscreen: event.data.offscreen,
-				imageBitmap: event.data.imageBitmap,
-				context: event.data.offscreen.getContext('2d')!,
+				offscreen: offscreen,
+				imageBitmap: imageBitmap,
+				context: ctx,
 			}
-			height = event.data.height
-			width = event.data.width
+			height = canvasHeight
+			width = canvasWidth
+
+			ctx.drawImage(imageBitmap, 0, 0, width, height)
+			ctx.drawImage(imageBitmap, width, 0, width, height)
 		}
-		if (!canvasMap[canvasId]) {
-			throw new Error(`Canvas with id ${canvasId} is not initialized.`)
-		}
+
 		let imageX = 0
 		let imageCopyX = width
 		function animate() {
@@ -58,8 +66,7 @@ self.onmessage = function (event: MessageEvent<WorkerMessageData>) {
 				animate()
 			})
 		}
-
-		animate()
+		if (type === 'start') animate()
 	} catch (err) {
 		err instanceof Error && self.postMessage({ message: err.message })
 	}

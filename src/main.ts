@@ -1,4 +1,5 @@
 import './style.css'
+import { WorkerMessageData } from './worker'
 
 const IMAGE_NAMES = ['sky', 'mountains', 'trees', 'ground', 'grass']
 const app = document.getElementById('app') as HTMLDivElement
@@ -14,14 +15,14 @@ function createWorkerTask(ids: string[], imageBitmaps: ImageBitmap[]): void {
 					canvasId: id,
 					offscreen: canvas,
 					imageBitmap: imageBitmaps[index],
-					width: window.innerWidth,
-					height: window.innerHeight,
+					canvasWidth: window.innerWidth,
+					canvasHeight: window.innerHeight,
 					type: 'init',
-				},
+				} as WorkerMessageData,
 				[canvas]
 			)
 		})
-
+		worker.postMessage({ type: 'start' } as WorkerMessageData)
 		worker.onmessage = function (event: MessageEvent) {
 			console.log(event.data)
 		}
