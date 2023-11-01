@@ -11,13 +11,13 @@ const sharedData = new Int32Array(buffer)
 sharedData[0] = 0
 sharedData[1] = window.innerWidth
 
-const updatePosition = (current: number, other: number, width: number) => {
-	const newX = current - 10
-	if (newX + width < 0) {
-		return other + width
-	}
-	return newX
-}
+// const updatePosition = (current: number, other: number, width: number) => {
+// 	const newX = current - 10
+// 	if (newX + width < 0) {
+// 		return other + width
+// 	}
+// 	return newX
+// }
 
 async function createWorkerTask(
 	ids: string[],
@@ -83,21 +83,21 @@ const preloadImages = async (imagePaths: string[]) => {
 
 	return await Promise.all(promises)
 }
-function animate() {
-	requestAnimationFrame(() => {
-		sharedData[0] = updatePosition(
-			sharedData[0],
-			sharedData[1],
-			window.innerWidth
-		)
-		sharedData[1] = updatePosition(
-			sharedData[1],
-			sharedData[0],
-			window.innerWidth
-		)
-		animate()
-	})
-}
+// function animate() {
+// 	requestAnimationFrame(() => {
+// 		sharedData[0] = updatePosition(
+// 			sharedData[0],
+// 			sharedData[1],
+// 			window.innerWidth
+// 		)
+// 		sharedData[1] = updatePosition(
+// 			sharedData[1],
+// 			sharedData[0],
+// 			window.innerWidth
+// 		)
+// 		animate()
+// 	})
+// }
 
 ;(async () => {
 	const images = await preloadImages(imagePaths)
