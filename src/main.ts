@@ -12,34 +12,32 @@ sharedData[0] = 0
 sharedData[1] = window.innerWidth
 
 const updatePosition = (current: number, other: number, width: number) => {
-	const newX = current - 10
+	console.log(current, other, width)
+	const newX = current - 1
 	if (newX + width < 0) {
+		console.log('ha?')
 		return other + width
 	}
 	return newX
 }
 
-async function createWorkerTask(
-	ids: string[],
-	imageBitmaps: ImageBitmap[]
-): Promise<void> {
+function createWorkerTask(ids: string[], imageBitmaps: ImageBitmap[]): void {
 	try {
 		const worker = new Worker(new URL('./worker.ts', import.meta.url))
-		const canvases: OffscreenCanvas[] = []
 
 		ids.forEach((id, index) => {
-			canvases.push(createCanvas())
+			const canvas = createCanvas()
 			worker.postMessage(
 				{
-					id: id,
-					offscreen: canvases[index],
-					imageBitmap: imageBitmaps,
+					canvasId: id,
+					offscreen: canvas,
+					imageBitmap: imageBitmaps[index],
 					width: window.innerWidth,
 					height: window.innerHeight,
-					buffer: sharedData,
+					buffer,
 					type: 'init',
 				},
-				[canvases[index]]
+				[canvas]
 			)
 		})
 
@@ -106,7 +104,7 @@ function animate() {
 	)
 	const firstThreeImages = imageBitmaps.slice(0, 3)
 	const lastTwoImages = imageBitmaps.slice(3)
-	await createWorkerTask(IMAGE_NAMES.slice(0, 3), firstThreeImages)
-	await createWorkerTask(IMAGE_NAMES.slice(3), lastTwoImages)
-	// animate()
+	createWorkerTask(IMAGE_NAMES.slice(0, 3), firstThreeImages)
+	createWorkerTask(IMAGE_NAMES.slice(3), lastTwoImages)
+	animate()
 })()

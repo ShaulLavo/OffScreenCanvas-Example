@@ -1,5 +1,5 @@
 interface WorkerMessageData {
-	id: string
+	canvasId: string
 	offscreen: OffscreenCanvas
 	imageBitmap: ImageBitmap
 	width: number
@@ -11,6 +11,7 @@ interface WorkerMessageData {
 type CanvasContext = {
 	offscreen: OffscreenCanvas
 	imageBitmap: ImageBitmap
+	context: OffscreenCanvasRenderingContext2D
 }
 
 const canvasMap: Record<string, CanvasContext> = {}
@@ -20,41 +21,41 @@ let sharedData: Int32Array
 
 self.onmessage = function (event: MessageEvent<WorkerMessageData>) {
 	try {
-		const { id, buffer, type } = event.data
+		const { canvasId, buffer, type } = event.data
 
 		if (type === 'init') {
-			canvasMap[id] = {
+			canvasMap[canvasId] = {
 				offscreen: event.data.offscreen,
 				imageBitmap: event.data.imageBitmap,
+				context: event.data.offscreen.getContext('2d')!,
 			}
 			height = event.data.height
 			sharedData = new Int32Array(buffer)
 			width = event.data.width
 		}
-		self.postMessage({ imageBitmap: canvasMap[id].imageBitmap })
-
-		if (!canvasMap[id]) {
-			throw new Error(`Canvas with id ${id} is not initialized.`)
+		if (!canvasMap[canvasId]) {
+			throw new Error(`Canvas with id ${canvasId} is not initialized.`)
 		}
 
-		const ctx = canvasMap[id].offscreen.getContext('2d')!
-		if (!ctx) throw new Error('Could not get 2D context')
 		function animate() {
 			requestAnimationFrame(() => {
 				Object.keys(canvasMap).forEach(id => {
-					const canvasContext = canvasMap[id]
-					const ctx = canvasContext.offscreen.getContext('2d')!
-					if (!ctx) throw new Error('Could not get 2D context')
-
+					const ctx = canvasMap[id].context
 					ctx.clearRect(0, 0, width, height)
-					ctx.drawImage(canvasContext.imageBitmap, 0, 0, width, height)
-					// ctx.drawImage(
-					// 	canvasContext.imageBitmap,
-					// 	canvasContext.sharedData[1],
-					// 	0,
-					// 	canvasContext.width,
-					// 	canvasContext.height
-					// )
+					ctx.drawImage(
+						canvasMap[id].imageBitmap,
+						sharedData[0],
+						0,
+						width,
+						height
+					)
+					ctx.drawImage(
+						canvasMap[id].imageBitmap,
+						sharedData[1],
+						0,
+						width,
+						height
+					)
 				})
 				animate()
 			})
@@ -62,6 +63,6 @@ self.onmessage = function (event: MessageEvent<WorkerMessageData>) {
 
 		animate()
 	} catch (err) {
-		console.error('Error inside worker:', err)
+		err instanceof Error && self.postMessage({ message: err.message })
 	}
 }
